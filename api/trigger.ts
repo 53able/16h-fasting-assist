@@ -1,153 +1,233 @@
 /**
- * Edge Function: POST /api/trigger
- * Triggers Web Push notifications for fasting session milestones
- *
- * Query params: ?sessionId=uuid&delay=seconds (for testing)
- * Request body: { sessionId: string, milestone: 'fat-burn' | 'autophagy' | 'complete' }
- * Response: { success: boolean, notificationsSent: number }
+ * POST /api/trigger — loads PushSubscription from Upstash and sends a VAPID-signed notification.
  */
 
-// Vercel Edge Function handler
+import webPush from 'web-push';
+import { z } from 'zod';
+import { triggerBodySchema } from './push-schemas';
+import { redisCommand, subscriptionRedisKey } from './redis-rest';
+
 export const config = {
-  runtime: 'edge',
+  runtime: 'nodejs',
+  maxDuration: 30,
 };
 
-interface TriggerRequest {
-  sessionId: string;
-  milestone?: 'fat-burn' | 'autophagy' | 'complete';
+const corsHeaders = (): HeadersInit => ({
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+});
+
+const uuidSchema = z.string().uuid();
+
+/** Push payload shape expected by {@link ../../public/service-worker.js}. */
+interface PushPayload {
+  title: string;
+  body: string;
+  tag: string;
 }
 
-interface TriggerResponse {
-  success: boolean;
-  notificationsSent: number;
-  message?: string;
+const milestonePayload = (sessionId: string, milestone: string): PushPayload => {
+  const tag = `fasting-${sessionId}-${milestone}`;
+  if (milestone === '10-hour' || milestone === 'fat-burn') {
+    return {
+      title: '16時間空腹アシスト',
+      body: '脂肪燃焼がスタート！内臓脂肪の分解が活発化中...',
+      tag,
+    };
+  }
+  return {
+    title: '16時間空腹アシスト',
+    body: 'オートファジー発動！細胞の再生が始まった！',
+    tag,
+  };
+};
+
+interface StoredSubscription {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
 }
 
-/**
- * POST /api/trigger
- *
- * VAPID Push Delivery Notes:
- * 1. Retrieve stored PushSubscriptions for the user
- * 2. For each subscription, sign HTTP POST request using VAPID private key
- * 3. POST to subscription.endpoint with headers:
- *    - Authorization: vapid t=<JWT>, k=<publicKey>
- *    - Content-Encoding: aes128gcm
- *    - Crypto-Key: <encrypted payload headers>
- * 4. Handle subscription expiration (delete stale subscriptions on 410 Gone)
- *
- * Environment Variables Required:
- * - VAPID_PUBLIC_KEY
- * - VAPID_PRIVATE_KEY
- * - SUBJECT (mailto: email for push service admin contact)
- *
- * Testing Milestones:
- * - 10 hours: "脂肪燃焼が始まります"
- * - 14 hours: "オートファジーが活性化"
- * - 16 hours: "目標達成！"
- *
- * iOS Safari Testing Steps:
- * 1. iOS 17+ Safari → Settings → Advanced → Experimental Features (Push API enabled)
- * 2. Open PWA in Safari
- * 3. Grant notification permission
- * 4. POST /api/trigger?sessionId=test&delay=5 (trigger after 5 seconds)
- * 5. Verify notification displays (foreground & background)
- * 6. Repeat with delay=3600 (1 hour) and delay=57600 (16 hours)
- */
-export default async function handler(
-  request: Request
-): Promise<Response> {
-  // Handle CORS preflight
+const parseStoredSubscription = (raw: unknown): StoredSubscription | null => {
+  if (typeof raw !== 'string' || raw === '') {
+    return null;
+  }
+  try {
+    const data: unknown = JSON.parse(raw);
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      !('endpoint' in data) ||
+      !('keys' in data)
+    ) {
+      return null;
+    }
+    const rec = data as Record<string, unknown>;
+    const endpoint = rec.endpoint;
+    const keys = rec.keys;
+    if (
+      typeof endpoint !== 'string' ||
+      typeof keys !== 'object' ||
+      keys === null ||
+      !('p256dh' in keys) ||
+      !('auth' in keys)
+    ) {
+      return null;
+    }
+    const k = keys as Record<string, unknown>;
+    const p256dh = k.p256dh;
+    const auth = k.auth;
+    if (typeof p256dh !== 'string' || typeof auth !== 'string') {
+      return null;
+    }
+    return { endpoint, keys: { p256dh, auth } };
+  } catch {
+    return null;
+  }
+};
+
+export default async function handler(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
+    return new Response(null, { status: 200, headers: corsHeaders() });
   }
 
   if (request.method !== 'POST') {
     return new Response(
       JSON.stringify({ success: false, notificationsSent: 0, message: 'Method not allowed' }),
-      { status: 405, headers: { 'Content-Type': 'application/json' } }
+      { status: 405, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
     );
   }
 
   try {
     const url = new URL(request.url);
-    const sessionId = url.searchParams.get('sessionId');
-    const delay = url.searchParams.get('delay'); // Testing: trigger after N seconds
+    const sessionIdQuery = url.searchParams.get('sessionId');
+    const subscriberIdQuery = url.searchParams.get('subscriberId');
+    const milestoneQuery = url.searchParams.get('milestone');
 
-    if (!sessionId) {
+    let bodyPartial: z.infer<typeof triggerBodySchema> = {};
+    if (request.headers.get('content-type')?.includes('application/json')) {
+      try {
+        const rawBody: unknown = await request.json();
+        const parsedBody = triggerBodySchema.safeParse(rawBody);
+        if (parsedBody.success) {
+          bodyPartial = parsedBody.data;
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    }
+
+    const sessionIdRaw = bodyPartial.sessionId ?? sessionIdQuery;
+    const subscriberIdRaw = bodyPartial.subscriberId ?? subscriberIdQuery;
+    const milestoneRaw =
+      bodyPartial.milestone ?? milestoneQuery ?? '16-hour';
+    const milestoneEnum = z.enum([
+      '10-hour',
+      '16-hour',
+      'fat-burn',
+      'autophagy',
+      'complete',
+    ]);
+    const milestoneParsed = milestoneEnum.safeParse(milestoneRaw);
+    const milestoneKey = milestoneParsed.success ? milestoneParsed.data : '16-hour';
+
+    const sessionCheck = uuidSchema.safeParse(sessionIdRaw);
+    const subscriberCheck = uuidSchema.safeParse(subscriberIdRaw);
+    if (!sessionCheck.success || !subscriberCheck.success) {
       return new Response(
         JSON.stringify({
           success: false,
           notificationsSent: 0,
-          message: 'Missing sessionId parameter',
+          message: 'sessionId and subscriberId (UUID) are required',
         }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
       );
     }
 
-    // Parse request body (optional)
-    let milestone: string = 'complete';
-    if (request.headers.get('content-type')?.includes('application/json')) {
-      try {
-        const body: TriggerRequest = await request.json();
-        if (body.milestone) {
-          milestone = body.milestone;
-        }
-      } catch {
-        // Ignore JSON parse errors; use defaults
+    const sessionId = sessionCheck.data;
+    const subscriberId = subscriberCheck.data;
+
+    const publicKey = process.env.VAPID_PUBLIC_KEY ?? '';
+    const privateKey = process.env.VAPID_PRIVATE_KEY ?? '';
+    const contact = process.env.VAPID_CONTACT_EMAIL ?? 'mailto:noreply@localhost';
+    if (publicKey === '' || privateKey === '') {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          notificationsSent: 0,
+          message: 'VAPID keys are not configured on the server',
+        }),
+        { status: 503, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+      );
+    }
+
+    webPush.setVapidDetails(contact, publicKey, privateKey);
+
+    const key = subscriptionRedisKey(subscriberId);
+    const rawSub: unknown = await redisCommand(['GET', key]);
+    const subscription = parseStoredSubscription(rawSub);
+    if (subscription === null) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          notificationsSent: 0,
+          message: 'No push subscription for this subscriberId',
+        }),
+        { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+      );
+    }
+
+    const payload = milestonePayload(sessionId, milestoneKey);
+    const bodyString = JSON.stringify(payload);
+
+    try {
+      await webPush.sendNotification(subscription, bodyString, {
+        TTL: 60 * 60 * 12,
+      });
+    } catch (sendErr: unknown) {
+      const statusCode =
+        typeof sendErr === 'object' &&
+        sendErr !== null &&
+        'statusCode' in sendErr &&
+        typeof (sendErr as { statusCode: unknown }).statusCode === 'number'
+          ? (sendErr as { statusCode: number }).statusCode
+          : undefined;
+      if (statusCode === 410) {
+        await redisCommand(['DEL', key]);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            notificationsSent: 0,
+            message: 'Push subscription expired (410)',
+          }),
+          { status: 410, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+        );
       }
+      throw sendErr;
     }
 
-    // TODO: Implementation Steps
-    // 1. Query Supabase for user's PushSubscriptions
-    // 2. For each subscription:
-    //    a. Create VAPID JWT token
-    //    b. Sign push payload with VAPID private key
-    //    c. POST to subscription.endpoint with signature headers
-    //    d. Handle responses (201 OK, 410 Gone = stale, 429 Rate limited, etc.)
-    // 3. Count successful deliveries
-    // 4. Return result with sent count
-
-    // Placeholder response (for development)
-    console.log(`[trigger] Session: ${sessionId}, Milestone: ${milestone}`);
-    if (delay) {
-      console.log(`[trigger] Testing: Will trigger after ${delay} seconds`);
-    }
-
-    const response: TriggerResponse = {
-      success: true,
-      notificationsSent: 0, // TODO: Actual count after implementation
-      message: 'Trigger queued (VAPID implementation pending)',
-    };
-
-    return new Response(JSON.stringify(response), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  } catch (error) {
-    console.error('[trigger] Error:', error);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        notificationsSent: 1,
+        message: 'Push sent',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    const isConfig =
+      msg.includes('not configured') || msg.includes('VAPID keys are not configured');
     return new Response(
       JSON.stringify({
         success: false,
         notificationsSent: 0,
-        message: `Trigger failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: msg,
       }),
       {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      }
+        status: isConfig ? 503 : 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+      },
     );
   }
 }

@@ -22,20 +22,28 @@ module.exports = {
   rules: {
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-    // CRITICAL: Domain layer must not depend on infra
-    'no-restricted-imports': [
-      'error',
-      {
-        patterns: [
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }]
+  },
+  overrides: [
+    {
+      files: ['src/domain/**/*.ts'],
+      rules: {
+        // Domain layer must not depend on infra
+        'no-restricted-imports': [
+          'error',
           {
-            group: ['**/infra/*'],
-            message: 'Domain layer (src/domain/) must not import from infra. Use ports/interfaces instead.'
+            patterns: [
+              {
+                group: ['**/infra/*', '../infra/*', '../../infra/*'],
+                message:
+                  'Domain layer (src/domain/) must not import from infra. Use ports/interfaces instead.'
+              }
+            ]
           }
         ]
       }
-    ]
-  },
+    }
+  ],
   settings: {
     react: {
       version: 'detect'

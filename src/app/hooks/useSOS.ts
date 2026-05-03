@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { SOSEvent } from '../../domain/types';
 import { IFastingRepository } from '../../domain/ports/fasting-repository';
-import { recordSOSEvent } from '../services/sos-service';
+import { deleteSOSEvent, recordSOSEvent } from '../services/sos-service';
 
 interface UseSOSResult {
   recordSOSEvent: (
@@ -14,6 +14,7 @@ interface UseSOSResult {
     estimatedCalories?: number,
     note?: string,
   ) => Promise<void>;
+  deleteSOSEvent: (eventId: string) => Promise<void>;
   sosEvents: SOSEvent[];
   isLoading: boolean;
 }
@@ -78,8 +79,27 @@ export function useSOS(repository: IFastingRepository, sessionId: string | null)
     [repository, sessionId],
   );
 
+  const handleDeleteSOSEvent = useCallback(
+    async (eventId: string): Promise<void> => {
+      if (sessionId === null) {
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        await deleteSOSEvent(repository, sessionId, eventId);
+        const updated = await repository.findById(sessionId);
+        setSosEvents(updated !== null ? updated.sosEvents : []);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [repository, sessionId],
+  );
+
   return {
     recordSOSEvent: handleRecordSOSEvent,
+    deleteSOSEvent: handleDeleteSOSEvent,
     sosEvents,
     isLoading,
   };
