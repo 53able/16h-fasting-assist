@@ -1,0 +1,33 @@
+{
+  "project_name": "16時間空腹アシスト",
+  "repository": {
+    "url": "https://github.com/53able/16h-fasting-assist",
+    "org": "53able",
+    "type": "new_repository"
+  },
+  "deployment": {
+    "platform": "vercel",
+    "url": "https://vercel.com/53ables-projects-6a9f4ad2",
+    "project_name": "16h-fasting-assist",
+    "type": "new_project"
+  },
+  "tech_stack": {
+    "frontend": "React 18+ + TypeScript 5.x",
+    "build": "Vite 5+",
+    "styling": "Tailwind CSS + shadcn/ui",
+    "database": "IndexedDB (Dexie.js)",
+    "pwa": "vite-plugin-pwa",
+    "notifications": "Web Push (VAPID)"
+  },
+  "phases": {
+    "phase_1": "MVP コア + 通知基盤 (3-4週)",
+    "phase_2": "筋トレ + ダッシュボード (2週)",
+    "phase_3": "コラム + 通知最適化 (1.5-2週)"
+  },
+  "total_estimated_timeline": "6-8週間 (iOS実機テストバッファ含)",
+  "critical_decisions": [
+    "Web Push (VAPID) サーバ: Cloudflare Workers / Vercel Edge Functions",
+    "Storage persistence: navigator.storage.persist() 必須化",
+    "iOS PWA インストール: オンボーディング強制"
+  ]
+}

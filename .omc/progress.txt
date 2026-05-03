@@ -1,0 +1,126 @@
+# Ralph Phase 1 Pre-flight Progress Log
+
+## Iteration 1
+
+### US-001: Repository インターフェース定義 (domain/ports/)
+
+**Status**: IN PROGRESS → VERIFICATION
+
+**Implementation**:
+- ✓ Created src/domain/types.ts
+  - Defined all domain types: UserProfile, FastingSession, SOSEvent, BodyStatusSnapshot, BodyStatus, WorkoutLog, ExerciseEntry, HealthMetric, PresetSchedule, ExportData
+  - Added ISO8601String branded type for type safety
+  - Helper functions: createISO8601String(), now()
+
+- ✓ Created src/domain/ports/fasting-repository.ts
+  - IFastingRepository with 6 methods (save, findById, findActive, findByDateRange, delete, findByStatus)
+  - JSDoc with invariants for each method
+
+- ✓ Created src/domain/ports/workout-repository.ts
+  - IWorkoutRepository with 5 methods (save, findByDateRange, delete, findByFastingSessionId, calculateStreak)
+
+- ✓ Created src/domain/ports/health-metric-repository.ts
+  - IHealthMetricRepository with 5 methods (save, findByType, delete, findLatestByAllTypes, findByDateRange)
+
+- ✓ Created src/domain/ports/notification-gateway.ts
+  - INotificationGateway with 6 methods (subscribeToPushNotifications, getSubscription, showLocalNotification, getPermissionStatus, isPersistentStorageGranted, requestPersistentStorage)
+  - NotificationOptions interface
+
+- ✓ Created src/domain/ports/export-service.ts
+  - IExportService with 5 methods (exportAllData, exportAsJSON, importData, importFromJSON, getCompatibleVersion)
+
+**Project Configuration**:
+- ✓ package.json with dependencies (React, Zustand, Dexie, TypeScript, ESLint, etc.)
+- ✓ tsconfig.json with strict: true, noImplicitAny: true, noUnusedLocals: true
+- ✓ .eslintrc.cjs with no-restricted-imports rule to prevent domain → infra imports
+- ⏳ pnpm install running in background (ID: b0689o01p)
+
+**Acceptance Criteria Status**:
+- ✓ fasting-repository.ts exists
+- ✓ workout-repository.ts exists
+- ✓ health-metric-repository.ts exists
+- ✓ notification-gateway.ts exists
+- ✓ export-service.ts exists
+- ✓ types.ts exists with all required types
+- ⏳ domain/ has zero infra/ imports (ESLint configured, awaiting pnpm install)
+- ⏳ tsc --noEmit passes (awaiting pnpm install)
+- ⏳ Each interface has JSDoc invariants (completed in source)
+
+**Learnings**:
+- Repository pattern interfaces are pure domain concepts with no framework coupling
+- Branded types (ISO8601String) improve type safety for domain values
+- ESLint no-restricted-imports rule enforces architectural boundaries
+- TypeScript strict mode catches potential errors early
+
+**Verification Results**:
+- ✓ tsc --noEmit: PASSED
+- ✓ ESLint: PASSED (no domain → infra imports)
+- ✓ All Acceptance Criteria verified
+
+**Status**: COMPLETED ✓
+
+---
+
+## Iteration 2
+
+### US-002: Dexie schema v1 確定 (src/infra/db.ts)
+
+**Status**: COMPLETED ✓
+
+**Implementation**:
+- ✓ Created src/infra/db.ts with AppDB class
+- ✓ Defined v1.stores() with 3 tables:
+  - fastingSessions: id, status, startedAt, [status+startedAt]
+  - workoutLogs: id, performedAt, type, fastingSessionId
+  - healthMetrics: id, recordedAt, type, [type+recordedAt]
+- ✓ Added schema v2 migration strategy comments
+- ✓ Included helper functions: initializeDatabase(), clearAllTables()
+- ✓ TypeScript compilation: PASSED
+- ✓ ESLint: PASSED
+
+**Acceptance Criteria Status**:
+- ✓ AppDB extends Dexie
+- ✓ version(1).stores() defined
+- ✓ Composite indices for optimized queries
+- ✓ db instance exported
+- ✓ tsc --noEmit passes
+- ✓ JSDoc comments and migration strategy documented
+
+---
+
+## Phase 1 Pre-flight Summary
+
+**Completed Stories**: US-001 ✓, US-002 ✓
+
+**Repository Interfaces** (US-001):
+- IFastingRepository (6 methods with invariants)
+- IWorkoutRepository (5 methods)
+- IHealthMetricRepository (5 methods)
+- INotificationGateway (6 methods with Web Push abstractions)
+- IExportService (5 methods for data backup)
+
+**Domain Types**: FastingSession, WorkoutLog, HealthMetric, UserProfile, SOSEvent, ExportData, etc.
+
+**Dexie Schema** (US-002):
+- 3 tables with composite indices for efficient querying
+- Version migration strategy for future schema changes
+- Safe database initialization and reset functions
+
+**Quality Metrics**:
+- TypeScript strict mode: ✓ PASS
+- ESLint (no domain→infra imports): ✓ PASS
+- Domain layer isolation: ✓ VERIFIED
+
+**Next Phase**:
+- US-003 (VAPID Spike) — Web Push implementation
+  - Requires: Vercel Edge Functions, VAPID key generation, iOS 17+ implementation
+  - Status: Ready to start (depends on US-001 ✓)
+  - Note: Includes iOS 実機 testing gate (Gate A in implementation plan)
+
+---
+
+## Decision Gate
+
+**Gate Trigger**: pnpm install completion + tsc/ESLint verification
+**Success Criteria**: All US-001 acceptance criteria verified
+**Rollback Plan**: If tsc/ESLint fails, fix type errors and re-verify
