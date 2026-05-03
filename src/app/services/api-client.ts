@@ -25,22 +25,31 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * POST /api/trigger?sessionId={sessionId}&milestone={milestone}
+ * POST /api/trigger with sessionId, subscriberId, milestone (query + JSON body).
  *
  * Retries up to MAX_RETRIES times with exponential backoff.
  * On final failure, calls fallbackCallback with the milestone message so the
  * caller can surface an in-app banner.
  *
+ * @param subscriberId - Server looks up PushSubscription; empty skips HTTP and uses fallback only
  * @returns The final Response on success, or null if all retries failed.
  */
-export async function triggerNotification(
+export const triggerNotification = async (
   sessionId: string,
+  subscriberId: string,
   milestone: MilestoneLabel,
   fallbackCallback?: FallbackCallback,
-): Promise<Response | null> {
-  const url = `/api/trigger?sessionId=${encodeURIComponent(sessionId)}&milestone=${encodeURIComponent(milestone)}`;
+): Promise<Response | null> => {
+  if (subscriberId === '') {
+    if (fallbackCallback !== undefined) {
+      fallbackCallback(MILESTONE_MESSAGES[milestone]);
+    }
+    return null;
+  }
 
-  let lastError: unknown;
+  const url = `/api/trigger?sessionId=${encodeURIComponent(sessionId)}&subscriberId=${encodeURIComponent(subscriberId)}&milestone=${encodeURIComponent(milestone)}`;
+
+  const errors: unknown[] = [];
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) {
@@ -51,7 +60,7 @@ export async function triggerNotification(
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, milestone }),
+        body: JSON.stringify({ sessionId, subscriberId, milestone }),
       });
 
       if (response.ok) {
@@ -63,9 +72,9 @@ export async function triggerNotification(
         break;
       }
 
-      lastError = new Error(`HTTP ${response.status}`);
+      errors.push(new Error(`HTTP ${response.status}`));
     } catch (error) {
-      lastError = error;
+      errors.push(error);
     }
   }
 
@@ -74,6 +83,6 @@ export async function triggerNotification(
     fallbackCallback(MILESTONE_MESSAGES[milestone]);
   }
 
-  console.error('[api-client] triggerNotification failed after retries:', lastError);
+  console.error('[api-client] triggerNotification failed after retries:', errors[errors.length - 1]);
   return null;
-}
+};

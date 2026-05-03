@@ -111,11 +111,25 @@
 - ESLint (no domain→infra imports): ✓ PASS
 - Domain layer isolation: ✓ VERIFIED
 
-**Next Phase**:
-- US-003 (VAPID Spike) — Web Push implementation
-  - Requires: Vercel Edge Functions, VAPID key generation, iOS 17+ implementation
-  - Status: Ready to start (depends on US-001 ✓)
-  - Note: Includes iOS 実機 testing gate (Gate A in implementation plan)
+**Next Phase** (historical; see Iteration 3 below):
+
+---
+
+## Iteration 3 — US-003 Web Push (server + client wiring)
+
+**Status**: IMPLEMENTED (code) — **Gate A (iOS 17+ PWA 実機)** は未実施の手動検証として残す
+
+**Implementation**:
+- ✓ `subscriberId`（`localStorage` の UUID）を `getOrCreateSubscriberId` で保持し、`/api/subscribe`・`/api/trigger`・通知スケジューラまで通す
+- ✓ `api/subscribe.ts` / `api/trigger.ts`: `runtime: nodejs`、Zod 検証、Upstash Redis REST で購読永続化、`web-push` で実送信、410 時は Redis から購読削除
+- ✓ `api/redis-rest.ts` / `api/push-schemas.ts`（購読 JSON・リクエストスキーマ）
+- ✓ クライアント: `VITE_VAPID_PUBLIC_KEY`、購読後に `POST /api/subscribe`、`triggerNotification` に `subscriberId`
+- ✓ Vitest + `fake-indexeddb` で `src/infra/db.test.ts`（v1 初期化スモーク）、`pnpm test` は `vitest run` で CI 終了可能
+- ✓ `.env.example` に VAPID / Upstash 変数名（実値なし）
+- ✓ `@types/web-push`、ESLint は `src/domain/**` のみ `infra` 禁止にスコープ（`App.tsx` 等の Composition Root は許可）
+
+**Gate A（未コード）**:
+- iOS 17+ PWA: `Notification.requestPermission`、バックグラウンド / kill 後の到達、実機での VAPID 動作はデプロイ＋実機で確認すること
 
 ---
 

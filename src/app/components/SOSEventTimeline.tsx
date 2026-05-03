@@ -7,6 +7,8 @@ import { SOSEvent } from '../../domain/types';
 
 interface SOSEventTimelineProps {
   sosEvents: SOSEvent[];
+  /** When set, each row shows a delete control that calls this with the event id. */
+  onDeleteEvent?: (eventId: string) => void | Promise<void>;
 }
 
 const FOOD_CATEGORY_LABELS: Record<SOSEvent['foodCategory'], string> = {
@@ -27,7 +29,7 @@ function formatTimestamp(iso: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-export function SOSEventTimeline({ sosEvents }: SOSEventTimelineProps) {
+export function SOSEventTimeline({ sosEvents, onDeleteEvent }: SOSEventTimelineProps) {
   if (sosEvents.length === 0) {
     return (
       <div
@@ -114,16 +116,53 @@ export function SOSEventTimeline({ sosEvents }: SOSEventTimelineProps) {
               marginBottom: index < sortedEvents.length - 1 ? '4px' : '0',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: '8px',
+                flexWrap: 'wrap',
+              }}
+            >
               <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#991b1b' }}>
                 {FOOD_CATEGORY_LABELS[event.foodCategory]}
               </span>
-              <time
-                dateTime={event.recordedAt}
-                style={{ fontSize: '0.75rem', color: '#6b7280', flexShrink: 0 }}
-              >
-                {formatTimestamp(event.recordedAt)}
-              </time>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+                <time
+                  dateTime={event.recordedAt}
+                  style={{ fontSize: '0.75rem', color: '#6b7280', flexShrink: 0 }}
+                >
+                  {formatTimestamp(event.recordedAt)}
+                </time>
+                {onDeleteEvent !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const label = `${FOOD_CATEGORY_LABELS[event.foodCategory]} (${formatTimestamp(event.recordedAt)})`;
+                      if (
+                        window.confirm(
+                          `このSOSイベントを削除しますか？\n${label}`,
+                        )
+                      ) {
+                        void onDeleteEvent(event.id);
+                      }
+                    }}
+                    aria-label={`SOSイベントを削除: ${FOOD_CATEGORY_LABELS[event.foodCategory]} ${formatTimestamp(event.recordedAt)}`}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #fca5a5',
+                      backgroundColor: '#fff',
+                      color: '#b91c1c',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    削除
+                  </button>
+                )}
+              </div>
             </div>
             {event.estimatedCalories !== null && (
               <span style={{ fontSize: '0.8125rem', color: '#4b5563' }}>

@@ -9,10 +9,6 @@ import {
   NotificationOptions,
 } from '../domain/ports/notification-gateway';
 
-/** VAPID public key - replace with your actual key from web-push generateVAPIDKeys() */
-const VAPID_PUBLIC_KEY =
-  'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDkBNW55pocmVG-9KMHuLkJZBqROMSHAiSMPpqF_kNDc';
-
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -24,6 +20,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+const readVapidPublicKey = (): string => {
+  const fromEnv = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+  return typeof fromEnv === 'string' && fromEnv.length > 0 ? fromEnv : '';
+};
+
 /** Callback type for displaying an in-app banner notification */
 export type ShowBannerCallback = (title: string, options?: NotificationOptions) => void;
 
@@ -34,7 +35,7 @@ export class NotificationGateway implements INotificationGateway {
     this.showBannerCallback = showBannerCallback;
   }
 
-  async subscribeToPushNotifications(): Promise<PushSubscription | null> {
+  async subscribeToPushNotifications(subscriberId?: string): Promise<PushSubscription | null> {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       return null;
     }
@@ -44,13 +45,42 @@ export class NotificationGateway implements INotificationGateway {
       return null;
     }
 
+    const vapidKey = readVapidPublicKey();
+    if (vapidKey === '') {
+      return null;
+    }
+
     try {
       const registration = await navigator.serviceWorker.ready;
-      const keyArray = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      const keyArray = urlBase64ToUint8Array(vapidKey);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: new Uint8Array(keyArray.buffer as ArrayBuffer),
       });
+
+      if (subscriberId !== undefined && subscriberId !== '') {
+        const json = subscription.toJSON();
+        if (json.endpoint !== undefined && json.keys !== undefined) {
+          const body = {
+            subscriberId,
+            subscription: {
+              endpoint: json.endpoint,
+              keys: {
+                p256dh: json.keys.p256dh ?? '',
+                auth: json.keys.auth ?? '',
+              },
+            },
+          };
+          await fetch('/api/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }).catch(() => {
+            // Server registration failure — local subscription still valid
+          });
+        }
+      }
+
       return subscription;
     } catch {
       return null;
@@ -91,7 +121,6 @@ export class NotificationGateway implements INotificationGateway {
       }
     }
 
-    // Fallback: in-app banner (works even without push permission)
     if (this.showBannerCallback !== null) {
       this.showBannerCallback(title, options);
     }

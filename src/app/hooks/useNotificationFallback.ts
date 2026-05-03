@@ -55,6 +55,8 @@ export interface UseNotificationFallbackResult {
   showBanner: boolean;
   bannerMessage: string;
   closeBanner: () => void;
+  /** Surfaces a banner when Web Push API (`/api/trigger`) fails after retries. */
+  showPushFallback: (message: string) => void;
 }
 
 export function useNotificationFallback(
@@ -65,6 +67,11 @@ export function useNotificationFallback(
 
   const closeBanner = useCallback(() => {
     setShowBanner(false);
+  }, []);
+
+  const showPushFallback = useCallback((message: string) => {
+    setBannerMessage(message);
+    setShowBanner(true);
   }, []);
 
   useEffect(() => {
@@ -90,5 +97,5 @@ export function useNotificationFallback(
     });
   }, [activeSession]);
 
-  return { showBanner, bannerMessage, closeBanner };
+  return { showBanner, bannerMessage, closeBanner, showPushFallback };
 }

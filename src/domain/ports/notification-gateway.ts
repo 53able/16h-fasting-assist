@@ -16,9 +16,10 @@ export interface INotificationGateway {
   /**
    * Push 通知の購読を申し込む
    * Invariant: iOS 17+ Safari PWA では requestPermission() が必須
+   * @param subscriberId - 空でないとき、購読 JSON を `/api/subscribe` に POST してサーバへ永続化する
    * @returns PushSubscription オブジェクト（endpoint と鍵を含む）
    */
-  subscribeToPushNotifications(): Promise<PushSubscription | null>;
+  subscribeToPushNotifications(subscriberId?: string): Promise<PushSubscription | null>;
 
   /**
    * 購読状態を確認

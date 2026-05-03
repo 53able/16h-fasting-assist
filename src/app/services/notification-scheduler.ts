@@ -59,6 +59,7 @@ function isSentInTab(sessionId: string, hours: number): boolean {
  */
 async function fireMilestone(
   sessionId: string,
+  subscriberId: string,
   milestone: MilestoneDefinition,
   fallbackCallback?: FallbackCallback,
 ): Promise<void> {
@@ -66,7 +67,7 @@ async function fireMilestone(
     return;
   }
   markSentInTab(sessionId, milestone.hours);
-  await triggerNotification(sessionId, milestone.label, fallbackCallback);
+  await triggerNotification(sessionId, subscriberId, milestone.label, fallbackCallback);
 }
 
 /**
@@ -77,6 +78,7 @@ async function fireMilestone(
  *
  * @param sessionId       UUID of the active fasting session.
  * @param startedAt       ISO 8601 string of when the session began.
+ * @param subscriberId    Stable client id for Web Push (see `getOrCreateSubscriberId` in infra).
  * @param storage         Persistence adapter (from infra/notification-storage).
  * @param fallbackCallback  Optional callback invoked when /api/trigger fails.
  * @returns Array of timer IDs so callers can cancel on unmount.
@@ -84,6 +86,7 @@ async function fireMilestone(
 export async function scheduleMilestoneNotifications(
   sessionId: string,
   startedAt: ISO8601String,
+  subscriberId: string,
   storage: MilestoneStorage,
   fallbackCallback?: FallbackCallback,
 ): Promise<ReturnType<typeof setTimeout>[]> {
@@ -95,7 +98,7 @@ export async function scheduleMilestoneNotifications(
   for (const hours of missed) {
     const milestone = MILESTONES.find((m) => m.hours === hours);
     if (milestone !== undefined) {
-      void fireMilestone(sessionId, milestone, fallbackCallback);
+      void fireMilestone(sessionId, subscriberId, milestone, fallbackCallback);
     }
   }
 
@@ -118,11 +121,11 @@ export async function scheduleMilestoneNotifications(
         const remainingMs = existing - Date.now();
         if (remainingMs > 0) {
           const id = setTimeout(() => {
-            void fireMilestone(sessionId, milestone, fallbackCallback);
+            void fireMilestone(sessionId, subscriberId, milestone, fallbackCallback);
           }, remainingMs);
           timerIds.push(id);
         } else {
-          void fireMilestone(sessionId, milestone, fallbackCallback);
+          void fireMilestone(sessionId, subscriberId, milestone, fallbackCallback);
         }
       }
       continue;
@@ -132,7 +135,7 @@ export async function scheduleMilestoneNotifications(
     await storage.saveMilestoneTimestamp(sessionId, milestone.hours, milestoneMs);
 
     const id = setTimeout(() => {
-      void fireMilestone(sessionId, milestone, fallbackCallback);
+      void fireMilestone(sessionId, subscriberId, milestone, fallbackCallback);
     }, delayMs);
 
     timerIds.push(id);
