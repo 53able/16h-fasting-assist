@@ -1,6 +1,7 @@
 {
   "name": "16h-fasting-assist",
   "version": "0.0.1",
+  "license": "MIT",
   "description": "16時間空腹アシスト - オートファジー活性化サポートアプリ",
   "type": "module",
   "scripts": {
