@@ -11,14 +11,55 @@ import {
   FastingSession,
   WorkoutLog,
   HealthMetric,
+  UserProfile,
+  PresetSchedule,
 } from '../domain/types';
+import {
+  createDefaultUserProfile,
+  DEFAULT_USER_PROFILE_ID,
+} from '../domain/user-profile-default';
+
+/** Built-in preset rows (also used by {@link ensureDatabaseSeed}). */
+export const SEED_PRESET_SCHEDULES: PresetSchedule[] = [
+  {
+    id: '10000000-0000-4000-8000-000000000001',
+    name: '夜間空腹（早め夕食）',
+    fastingStartHour: 18,
+    fastingDurationHours: 16,
+    lifestyle: 'evening',
+    isCustom: false,
+  },
+  {
+    id: '10000000-0000-4000-8000-000000000002',
+    name: '日中空腹（遅め夕食）',
+    fastingStartHour: 22,
+    fastingDurationHours: 16,
+    lifestyle: 'morning',
+    isCustom: false,
+  },
+];
+
+/**
+ * Ensures preset schedules and default user profile exist (idempotent).
+ * Call after {@link db} is open — e.g. on app boot — so fresh installs and
+ * migrations always have seed data even if Dexie upgrade hooks differ by environment.
+ */
+export async function ensureDatabaseSeed(): Promise<void> {
+  await db.open();
+  if ((await db.presetSchedules.count()) === 0) {
+    await db.presetSchedules.bulkPut(SEED_PRESET_SCHEDULES);
+  }
+  if ((await db.userProfiles.get(DEFAULT_USER_PROFILE_ID)) === undefined) {
+    await db.userProfiles.add(createDefaultUserProfile());
+  }
+}
 
 /**
  * AppDB - Dexie Database Schema Definition
  *
  * Versioning Strategy:
- * - v1 (current): Initial schema with fastingSessions, workoutLogs, healthMetrics
- * - v2 (future): Add presetSchedules table, rename fields for consistency
+ * - v1: fastingSessions, workoutLogs, healthMetrics
+ * - v2: userProfiles, presetSchedules + seed presets and default profile row
  *
  * Migration Notes:
  * When upgrading to v2, use db.version(2).stores({...}) and db.version(2).upgrade(tx => {...})
@@ -57,30 +98,37 @@ export class AppDB extends Dexie {
    */
   healthMetrics!: Table<HealthMetric, string>;
 
+  userProfiles!: Table<UserProfile, string>;
+
+  presetSchedules!: Table<PresetSchedule, string>;
+
   constructor() {
     super('SixteenHourFastDB');
     this.version(1).stores({
-      // Primary keys + indices
-      // Syntax: 'primaryKey, index1, index2, [compound+indices]'
-
-      // fastingSessions: status and startedAt often queried together for active session list
       fastingSessions:
         'id, status, startedAt, [status+startedAt]',
 
-      // workoutLogs: typically filtered by performedAt (history view),
-      // type (activity type stats), or fastingSessionId (correlation)
       workoutLogs:
         'id, performedAt, type, fastingSessionId',
 
-      // healthMetrics: compound index critical for dashboard queries
-      // e.g., "get all weight measurements in last 30 days"
       healthMetrics:
         'id, recordedAt, type, [type+recordedAt]',
     });
 
-    // Future: v2 migration placeholder
-    // Uncomment and implement when adding new tables or schema changes:
-    // this.version(2).stores({...}).upgrade(...)
+    this.version(2)
+      .stores({
+        fastingSessions:
+          'id, status, startedAt, [status+startedAt]',
+        workoutLogs:
+          'id, performedAt, type, fastingSessionId',
+        healthMetrics:
+          'id, recordedAt, type, [type+recordedAt]',
+        userProfiles: 'id',
+        presetSchedules: 'id, lifestyle',
+      })
+      .upgrade(async () => {
+        /* Schema add only; data seeding via ensureDatabaseSeed() on boot. */
+      });
   }
 }
 
@@ -96,7 +144,7 @@ export const db = new AppDB();
  */
 export async function initializeDatabase(): Promise<void> {
   try {
-    // Test database connectivity
+    await ensureDatabaseSeed();
     const count = await db.fastingSessions.count();
     console.log(`Database initialized. Existing sessions: ${count}`);
   } catch (error) {
@@ -118,6 +166,8 @@ export async function clearAllTables(skipBackup: boolean = false): Promise<void>
     db.fastingSessions.clear(),
     db.workoutLogs.clear(),
     db.healthMetrics.clear(),
+    db.userProfiles.clear(),
+    db.presetSchedules.clear(),
   ]);
   console.log('All database tables cleared.');
 }
