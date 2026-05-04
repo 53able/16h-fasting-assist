@@ -1,4 +1,16 @@
 .vercel
 node_modules
 dist
+
+# OMC runtime state and work files
 .omc/state
+.omc/prd.json
+.omc/project-memory.json
+
+# Environment and secrets
+.env.local
+.env.*.local
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
