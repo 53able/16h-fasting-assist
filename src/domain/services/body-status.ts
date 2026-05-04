@@ -42,7 +42,10 @@ const PHASE_RANGES: PhaseRange[] = [
   },
 ];
 
-const TARGET_HOURS = 16;
+const TARGET_HOURS_FALLBACK = 16;
+
+const GOAL_SUB16_DESCRIPTION =
+  '目標達成：設定した空腹時間を完了しました。無理のないペースで続けていきましょう。';
 
 function determinePhase(elapsedHours: number): PhaseRange {
   for (const range of PHASE_RANGES) {
@@ -55,6 +58,10 @@ function determinePhase(elapsedHours: number): PhaseRange {
 
 /**
  * Calculate body status from fasting session timestamps.
+ *
+ * For goals under 16h, phase bands are scaled to the session length so the UI
+ * does not imply late-stage autophagy before the scheduled end. For goals of
+ * 16h or longer, wall-clock hours match the classic 16h milestone model.
  *
  * @param startedAt - ISO8601 timestamp when fasting started
  * @param scheduledEndAt - ISO8601 timestamp when fasting is scheduled to end
@@ -72,13 +79,37 @@ export function calculateBodyStatus(
   const elapsedMs = Math.max(0, now - startMs);
 
   const elapsedHours = elapsedMs / (1000 * 60 * 60);
-  const targetHours = totalMs > 0 ? totalMs / (1000 * 60 * 60) : TARGET_HOURS;
+  const targetHours =
+    totalMs > 0 ? totalMs / (1000 * 60 * 60) : TARGET_HOURS_FALLBACK;
   const remainingHours = Math.max(0, targetHours - elapsedHours);
 
-  const phaseRange = determinePhase(elapsedHours);
-
-  // progressRatio: 0.0 at start, 1.0 at scheduledEndAt (capped)
   const progressRatio = targetHours > 0 ? Math.min(1, elapsedHours / targetHours) : 0;
+
+  if (elapsedHours >= targetHours) {
+    if (targetHours >= 16) {
+      return {
+        elapsedHours,
+        remainingHours: 0,
+        phase: 'autophagy',
+        description: PHASE_RANGES[3].description,
+        progressRatio: 1,
+      };
+    }
+    return {
+      elapsedHours,
+      remainingHours: 0,
+      phase: 'fat-burning',
+      description: GOAL_SUB16_DESCRIPTION,
+      progressRatio: 1,
+    };
+  }
+
+  const phaseLookupHours =
+    targetHours < 16
+      ? Math.min((elapsedHours / targetHours) * 16, 15.999)
+      : elapsedHours;
+
+  const phaseRange = determinePhase(phaseLookupHours);
 
   return {
     elapsedHours,
