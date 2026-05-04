@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "es2020",
+    "lib": ["es2020"],
+    "skipLibCheck": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "declaration": false,
+    "outDir": "./.output"
+  },
+  "include": ["*.ts"],
+  "exclude": ["node_modules", "*.test.ts"]
+}
