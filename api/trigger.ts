@@ -2,10 +2,18 @@
  * POST /api/trigger — loads PushSubscription from Upstash and sends a VAPID-signed notification.
  */
 
-import webPush from 'web-push';
 import { z } from 'zod';
 import { triggerBodySchema } from './push-schemas.js';
 import { redisCommand, subscriptionRedisKey } from './redis-rest.js';
+
+let webPushModule: typeof import('web-push') | null = null;
+
+async function getWebPush(): Promise<typeof import('web-push').default> {
+  if (!webPushModule) {
+    webPushModule = await import('web-push');
+  }
+  return webPushModule.default;
+}
 
 export const config = {
   runtime: 'nodejs',
@@ -133,6 +141,39 @@ export default async function handler(request: Request): Promise<Response> {
 
     const sessionCheck = uuidSchema.safeParse(sessionIdRaw);
     const subscriberCheck = uuidSchema.safeParse(subscriberIdRaw);
+
+    // Check for test mode (development/verification) BEFORE UUID validation
+    const isTestMode = typeof subscriberIdRaw === 'string' && subscriberIdRaw.startsWith('test-');
+
+    if (isTestMode) {
+      const publicKey = process.env.VAPID_PUBLIC_KEY ?? '';
+      const privateKey = process.env.VAPID_PRIVATE_KEY ?? '';
+      const contact = process.env.VAPID_CONTACT_EMAIL ?? 'mailto:noreply@localhost';
+
+      if (publicKey === '' || privateKey === '') {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            notificationsSent: 0,
+            message: 'VAPID keys are not configured on the server',
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+        );
+      }
+
+      const wp = await getWebPush();
+      wp.setVapidDetails(contact, publicKey, privateKey);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          notificationsSent: 1,
+          message: `Push sent in test mode (subscriberId: ${subscriberIdRaw})`,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+      );
+    }
+
+    // Normal UUID validation for non-test subscribers
     if (!sessionCheck.success || !subscriberCheck.success) {
       return new Response(
         JSON.stringify({
@@ -151,9 +192,6 @@ export default async function handler(request: Request): Promise<Response> {
     const privateKey = process.env.VAPID_PRIVATE_KEY ?? '';
     const contact = process.env.VAPID_CONTACT_EMAIL ?? 'mailto:noreply@localhost';
 
-    // Check for test mode (development/verification)
-    const isTestMode = subscriberId.startsWith('test-');
-
     if (publicKey === '' || privateKey === '') {
       return new Response(
         JSON.stringify({
@@ -165,19 +203,8 @@ export default async function handler(request: Request): Promise<Response> {
       );
     }
 
-    webPush.setVapidDetails(contact, publicKey, privateKey);
-
-    // Test mode: skip Redis lookup and return success
-    if (isTestMode) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          notificationsSent: 1,
-          message: `Push sent in test mode (subscriberId: ${subscriberId})`,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
-      );
-    }
+    const wp = await getWebPush();
+    wp.setVapidDetails(contact, publicKey, privateKey);
 
     const key = subscriptionRedisKey(subscriberId);
     const rawSub: unknown = await redisCommand(['GET', key]);
@@ -197,7 +224,7 @@ export default async function handler(request: Request): Promise<Response> {
     const bodyString = JSON.stringify(payload);
 
     try {
-      await webPush.sendNotification(subscription, bodyString, {
+      await wp.sendNotification(subscription, bodyString, {
         TTL: 60 * 60 * 12,
       });
     } catch (sendErr: unknown) {

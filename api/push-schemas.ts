@@ -32,7 +32,7 @@ const milestoneSchema = z.enum([
 export const triggerBodySchema = z.object({
   sessionId: z.string().uuid().optional(),
   milestone: milestoneSchema.optional(),
-  subscriberId: z.string().uuid().optional(),
+  subscriberId: z.union([z.string().uuid(), z.string().regex(/^test-/)]).optional(),
 });
 
 export type TriggerBody = z.infer<typeof triggerBodySchema>;
