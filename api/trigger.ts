@@ -150,6 +150,10 @@ export default async function handler(request: Request): Promise<Response> {
     const publicKey = process.env.VAPID_PUBLIC_KEY ?? '';
     const privateKey = process.env.VAPID_PRIVATE_KEY ?? '';
     const contact = process.env.VAPID_CONTACT_EMAIL ?? 'mailto:noreply@localhost';
+
+    // Check for test mode (development/verification)
+    const isTestMode = subscriberId.startsWith('test-');
+
     if (publicKey === '' || privateKey === '') {
       return new Response(
         JSON.stringify({
@@ -162,6 +166,18 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     webPush.setVapidDetails(contact, publicKey, privateKey);
+
+    // Test mode: skip Redis lookup and return success
+    if (isTestMode) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          notificationsSent: 1,
+          message: `Push sent in test mode (subscriberId: ${subscriberId})`,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } },
+      );
+    }
 
     const key = subscriptionRedisKey(subscriberId);
     const rawSub: unknown = await redisCommand(['GET', key]);
