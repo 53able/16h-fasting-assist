@@ -17,6 +17,8 @@ import { scheduleMilestoneNotifications, MilestoneStorage } from '../services/no
 interface UseNotificationSchedulerProps {
   sessionId: string;
   startedAt: ISO8601String;
+  /** Session goal hours — selects which milestones fire. */
+  targetHours: number;
   /** Stable id for Web Push + /api/trigger routing. */
   subscriberId: string;
   /** Persistence adapter for milestone timestamps. */
@@ -32,6 +34,7 @@ interface UseNotificationSchedulerResult {
 export function useNotificationScheduler({
   sessionId,
   startedAt,
+  targetHours,
   subscriberId,
   storage,
   onFallback,
@@ -46,7 +49,14 @@ export function useNotificationScheduler({
 
     let cancelled = false;
 
-    scheduleMilestoneNotifications(sessionId, startedAt, subscriberId, storage, onFallback)
+    scheduleMilestoneNotifications(
+      sessionId,
+      startedAt,
+      targetHours,
+      subscriberId,
+      storage,
+      onFallback,
+    )
       .then((ids) => {
         if (!cancelled) {
           timerIdsRef.current = ids;
@@ -73,7 +83,7 @@ export function useNotificationScheduler({
       setIsScheduled(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, startedAt, subscriberId, storage, onFallback]);
+  }, [sessionId, startedAt, targetHours, subscriberId, storage, onFallback]);
 
   return { isScheduled };
 }

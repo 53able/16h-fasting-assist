@@ -15,6 +15,10 @@ export interface UserProfile {
   notificationEnabled: boolean;
   termsAcceptedAt: ISO8601String | null;
   termsVersion: string;
+  /** 平日は空腹セッション開始を抑止（週末リセット向け MVP） */
+  weekendOnly: boolean;
+  /** 選択中のプリセット ID（未選択は null） */
+  activePresetId: string | null;
 }
 
 /** 空腹セッション */

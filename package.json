@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "lint": "eslint src/ api/",
+    "lint": "eslint src/ api/ vite.config.ts",
     "format": "prettier --write src/ api/"
   },
   "dependencies": {

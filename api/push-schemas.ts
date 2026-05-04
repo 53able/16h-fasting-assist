@@ -23,6 +23,7 @@ export type SubscribeBody = z.infer<typeof subscribeBodySchema>;
 const milestoneSchema = z.enum([
   '10-hour',
   '16-hour',
+  'target-reached',
   'fat-burn',
   'autophagy',
   'complete',
