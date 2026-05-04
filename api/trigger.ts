@@ -8,11 +8,11 @@ import { redisCommand, subscriptionRedisKey } from './redis-rest.js';
 
 let webPushModule: typeof import('web-push') | null = null;
 
-async function getWebPush(): Promise<typeof import('web-push').default> {
-  if (!webPushModule) {
+async function getWebPush(): Promise<typeof import('web-push')> {
+  if (webPushModule === null) {
     webPushModule = await import('web-push');
   }
-  return webPushModule.default;
+  return webPushModule;
 }
 
 export const config = {
@@ -41,6 +41,13 @@ const milestonePayload = (sessionId: string, milestone: string): PushPayload => 
     return {
       title: '16時間空腹アシスト',
       body: '脂肪燃焼がスタート！内臓脂肪の分解が活発化中...',
+      tag,
+    };
+  }
+  if (milestone === 'target-reached') {
+    return {
+      title: '16時間空腹アシスト',
+      body: '目標達成！設定した空腹時間を完了しました。',
       tag,
     };
   }
@@ -132,6 +139,7 @@ export default async function handler(request: Request): Promise<Response> {
     const milestoneEnum = z.enum([
       '10-hour',
       '16-hour',
+      'target-reached',
       'fat-burn',
       'autophagy',
       'complete',
