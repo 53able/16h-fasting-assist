@@ -38,7 +38,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "api"],
+  "include": ["src", "api", "vite.config.ts"],
   "exclude": ["node_modules", "dist", ".omc"],
   "ts-node": {
     "compilerOptions": {
