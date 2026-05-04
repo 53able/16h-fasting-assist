@@ -5,7 +5,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { FastingSession } from '../../domain/types';
+import { buildScheduledMilestones } from '../../domain/milestone-plan';
+import type { FastingSession } from '../../domain/types';
+import { getPushMilestoneBannerMessage } from '../services/api-client';
 
 const STORAGE_KEY = 'notification_fallback_last_milestone';
 
@@ -32,12 +34,17 @@ function setLastMilestoneRecord(record: LastMilestoneRecord): void {
   }
 }
 
-/** Milestone thresholds in hours with their messages */
-const MILESTONES: { hours: number; message: string }[] = [
-  { hours: 2, message: '消化フェーズ完了！グリコーゲン消費がスタートしました。' },
-  { hours: 10, message: '脂肪燃焼がスタート！ケトン体が増加しています。' },
-  { hours: 16, message: 'オートファジー活性！細胞の自己修復が始まりました。' },
-];
+function buildResumeMilestoneList(targetHours: number): { hours: number; message: string }[] {
+  const digestion = {
+    hours: 2,
+    message: '消化フェーズ完了！グリコーゲン消費がスタートしました。',
+  };
+  const pushLinked = buildScheduledMilestones(targetHours).map((m) => ({
+    hours: m.hours,
+    message: getPushMilestoneBannerMessage(m.label),
+  }));
+  return [digestion, ...pushLinked];
+}
 
 function getMissedMilestones(
   session: FastingSession,
@@ -46,7 +53,8 @@ function getMissedMilestones(
   const elapsedMs = Date.now() - new Date(session.startedAt).getTime();
   const elapsedHours = elapsedMs / (1000 * 60 * 60);
 
-  return MILESTONES.filter(
+  const milestones = buildResumeMilestoneList(session.targetHours);
+  return milestones.filter(
     (m) => m.hours <= elapsedHours && m.hours > lastShownMilestone,
   );
 }
@@ -86,7 +94,6 @@ export function useNotificationFallback(
     const missed = getMissedMilestones(activeSession, lastShownMilestone);
     if (missed.length === 0) return;
 
-    // Show the most advanced milestone message
     const latest = missed[missed.length - 1];
     setBannerMessage(latest.message);
     setShowBanner(true);

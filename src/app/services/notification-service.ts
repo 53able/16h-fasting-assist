@@ -3,14 +3,21 @@
  * Service worker registration and milestone correction logic.
  */
 
-import { FastingSession } from '../../domain/types';
+import { buildScheduledMilestones } from '../../domain/milestone-plan';
+import type { FastingSession } from '../../domain/types';
+import { getPushMilestoneBannerMessage } from './api-client';
 
-/** Milestone definitions: hours elapsed → notification message */
-const MILESTONE_DEFINITIONS: { hours: number; message: string }[] = [
-  { hours: 2, message: '消化フェーズ完了！グリコーゲン消費がスタートしました。' },
-  { hours: 10, message: '脂肪燃焼がスタート！ケトン体が増加しています。' },
-  { hours: 16, message: 'オートファジー活性！細胞の自己修復が始まりました。' },
-];
+function buildDefinitionsForSession(session: FastingSession): { hours: number; message: string }[] {
+  const digestion = {
+    hours: 2,
+    message: '消化フェーズ完了！グリコーゲン消費がスタートしました。',
+  };
+  const linked = buildScheduledMilestones(session.targetHours).map((m) => ({
+    hours: m.hours,
+    message: getPushMilestoneBannerMessage(m.label),
+  }));
+  return [digestion, ...linked];
+}
 
 /**
  * Register the service worker at /service-worker.js.
@@ -41,15 +48,26 @@ export async function setupServiceWorker(): Promise<ServiceWorkerRegistration | 
 export function checkMilestoneCorrection(session: FastingSession): boolean {
   const elapsedMs = Date.now() - new Date(session.startedAt).getTime();
   const elapsedHours = elapsedMs / (1000 * 60 * 60);
-  return MILESTONE_DEFINITIONS.some((m) => m.hours <= elapsedHours);
+  const definitions = buildDefinitionsForSession(session);
+  return definitions.some((m) => m.hours <= elapsedHours);
 }
 
 /**
  * Get all milestone messages applicable at the given elapsed hours.
  *
  * @param elapsedHours - Hours elapsed since fasting started
+ * @param targetHours - Session goal length
  * @returns Array of milestone messages that apply at this point in time
  */
-export function getMilestoneMessages(elapsedHours: number): string[] {
-  return MILESTONE_DEFINITIONS.filter((m) => m.hours <= elapsedHours).map((m) => m.message);
+export function getMilestoneMessages(elapsedHours: number, targetHours: number): string[] {
+  const digestion = {
+    hours: 2,
+    message: '消化フェーズ完了！グリコーゲン消費がスタートしました。',
+  };
+  const linked = buildScheduledMilestones(targetHours).map((m) => ({
+    hours: m.hours,
+    message: getPushMilestoneBannerMessage(m.label),
+  }));
+  const definitions = [digestion, ...linked];
+  return definitions.filter((m) => m.hours <= elapsedHours).map((m) => m.message);
 }

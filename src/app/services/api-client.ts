@@ -4,7 +4,9 @@
  * Includes exponential-backoff retry logic and in-app banner fallback.
  */
 
-export type MilestoneLabel = '10-hour' | '16-hour';
+import type { PushMilestoneLabel } from '../../domain/milestone-plan';
+
+export type MilestoneLabel = PushMilestoneLabel;
 
 /** Callback invoked when all retries are exhausted so the UI can show a banner. */
 export type FallbackCallback = (message: string) => void;
@@ -12,7 +14,16 @@ export type FallbackCallback = (message: string) => void;
 const MILESTONE_MESSAGES: Record<MilestoneLabel, string> = {
   '10-hour': '脂肪燃焼がスタート！内臓脂肪の分解が活発化中...',
   '16-hour': 'オートファジー発動！細胞の再生が始まった！',
+  'target-reached': '目標達成！設定した空腹時間を完了しました。',
 };
+
+/**
+ * User-visible banner text for a push milestone label (push fallback parity).
+ *
+ * @param milestone - Milestone key sent to `/api/trigger`.
+ */
+export const getPushMilestoneBannerMessage = (milestone: MilestoneLabel): string =>
+  MILESTONE_MESSAGES[milestone];
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
@@ -40,9 +51,10 @@ export const triggerNotification = async (
   milestone: MilestoneLabel,
   fallbackCallback?: FallbackCallback,
 ): Promise<Response | null> => {
+  const bannerText = MILESTONE_MESSAGES[milestone];
   if (subscriberId === '') {
     if (fallbackCallback !== undefined) {
-      fallbackCallback(MILESTONE_MESSAGES[milestone]);
+      fallbackCallback(bannerText);
     }
     return null;
   }
@@ -80,7 +92,7 @@ export const triggerNotification = async (
 
   // All attempts failed – trigger fallback banner
   if (fallbackCallback !== undefined) {
-    fallbackCallback(MILESTONE_MESSAGES[milestone]);
+    fallbackCallback(bannerText);
   }
 
   console.error('[api-client] triggerNotification failed after retries:', errors[errors.length - 1]);

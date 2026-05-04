@@ -1,6 +1,6 @@
 /**
  * Notification Scheduler Service
- * Schedules milestone notifications for 10h and 16h fasting checkpoints.
+ * Schedules milestone notifications from {@link buildScheduledMilestones}.
  *
  * Strategy:
  * 1. Calculate the exact wall-clock time each milestone fires.
@@ -12,11 +12,12 @@
  */
 
 import { ISO8601String } from '../../domain/types';
-import { triggerNotification, FallbackCallback, MilestoneLabel } from './api-client';
+import { buildScheduledMilestones, type PushMilestoneLabel } from '../../domain/milestone-plan';
+import { triggerNotification, FallbackCallback } from './api-client';
 
 interface MilestoneDefinition {
   hours: number;
-  label: MilestoneLabel;
+  label: PushMilestoneLabel;
 }
 
 /** Port interface for milestone persistence — fulfilled by infra/notification-storage */
@@ -25,11 +26,6 @@ export interface MilestoneStorage {
   getMilestoneTimestamp(sessionId: string, milestoneHours: number): Promise<number | null>;
   checkMissingMilestones(sessionId: string): Promise<number[]>;
 }
-
-const MILESTONES: MilestoneDefinition[] = [
-  { hours: 10, label: '10-hour' },
-  { hours: 16, label: '16-hour' },
-];
 
 /** sessionStorage key prefix to track which milestones have been sent in this tab */
 const SS_KEY_PREFIX = 'milestone_sent_';
@@ -78,6 +74,7 @@ async function fireMilestone(
  *
  * @param sessionId       UUID of the active fasting session.
  * @param startedAt       ISO 8601 string of when the session began.
+ * @param targetHours     Session goal (`FastingSession.targetHours`) — drives milestone set.
  * @param subscriberId    Stable client id for Web Push (see `getOrCreateSubscriberId` in infra).
  * @param storage         Persistence adapter (from infra/notification-storage).
  * @param fallbackCallback  Optional callback invoked when /api/trigger fails.
@@ -86,37 +83,33 @@ async function fireMilestone(
 export async function scheduleMilestoneNotifications(
   sessionId: string,
   startedAt: ISO8601String,
+  targetHours: number,
   subscriberId: string,
   storage: MilestoneStorage,
   fallbackCallback?: FallbackCallback,
 ): Promise<ReturnType<typeof setTimeout>[]> {
+  const milestones = buildScheduledMilestones(targetHours);
   const startMs = new Date(startedAt).getTime();
   const timerIds: ReturnType<typeof setTimeout>[] = [];
 
-  // First, fire any milestones that were missed while the app was closed.
   const missed = await storage.checkMissingMilestones(sessionId);
   for (const hours of missed) {
-    const milestone = MILESTONES.find((m) => m.hours === hours);
+    const milestone = milestones.find((m) => m.hours === hours);
     if (milestone !== undefined) {
       void fireMilestone(sessionId, subscriberId, milestone, fallbackCallback);
     }
   }
 
-  // Schedule future milestones.
-  for (const milestone of MILESTONES) {
+  for (const milestone of milestones) {
     const milestoneMs = startMs + milestone.hours * 60 * 60 * 1000;
     const delayMs = milestoneMs - Date.now();
 
     if (delayMs <= 0) {
-      // Already passed — handled above by checkMissingMilestones
       continue;
     }
 
-    // Avoid re-registering a timer if already persisted for this milestone.
     const existing = await storage.getMilestoneTimestamp(sessionId, milestone.hours);
     if (existing !== null) {
-      // Already scheduled (possibly in another tab); re-arm the timer locally
-      // but do NOT re-persist.
       if (!isSentInTab(sessionId, milestone.hours)) {
         const remainingMs = existing - Date.now();
         if (remainingMs > 0) {
@@ -131,7 +124,6 @@ export async function scheduleMilestoneNotifications(
       continue;
     }
 
-    // Persist the scheduled time and set the timer.
     await storage.saveMilestoneTimestamp(sessionId, milestone.hours, milestoneMs);
 
     const id = setTimeout(() => {
