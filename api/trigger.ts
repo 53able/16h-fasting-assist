@@ -4,8 +4,8 @@
 
 import webPush from 'web-push';
 import { z } from 'zod';
-import { triggerBodySchema } from './push-schemas';
-import { redisCommand, subscriptionRedisKey } from './redis-rest';
+import { triggerBodySchema } from './push-schemas.js';
+import { redisCommand, subscriptionRedisKey } from './redis-rest.js';
 
 export const config = {
   runtime: 'nodejs',

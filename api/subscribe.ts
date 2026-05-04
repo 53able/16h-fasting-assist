@@ -2,8 +2,8 @@
  * POST /api/subscribe — persists Web Push subscription in Upstash Redis (VAPID keys live on trigger).
  */
 
-import { subscribeBodySchema } from './push-schemas';
-import { redisCommand, subscriptionRedisKey } from './redis-rest';
+import { subscribeBodySchema } from './push-schemas.js';
+import { redisCommand, subscriptionRedisKey } from './redis-rest.js';
 
 export const config = {
   runtime: 'nodejs',
