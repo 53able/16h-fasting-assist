@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { FastingSession, ISO8601String } from './domain/types';
 import { createISO8601String, now } from './domain/types';
 import { useTimerStore } from './app/stores/timer-store';
-import { useWorkout } from './app/hooks/useWorkout';
 import { useSOS } from './app/hooks/useSOS';
 import { useNotificationFallback } from './app/hooks/useNotificationFallback';
 import { useNotificationScheduler } from './app/hooks/useNotificationScheduler';
@@ -15,14 +14,8 @@ import { CountdownTimer } from './app/components/CountdownTimer';
 import { SOSButton } from './app/components/SOSButton';
 import { SafeFoodList } from './app/components/SafeFoodList';
 import { SOSEventTimeline } from './app/components/SOSEventTimeline';
-import { WorkoutLogger } from './app/components/WorkoutLogger';
-import { WorkoutStreak } from './app/components/WorkoutStreak';
-import { WorkoutHistory } from './app/components/WorkoutHistory';
-import { HealthMetricDashboard } from './app/components/HealthMetricDashboard';
 import { NotificationBanner } from './app/components/NotificationBanner';
 import { DexieFastingRepository } from './infra/repositories/dexie-fasting-repository';
-import { DexieWorkoutRepository } from './infra/repositories/dexie-workout-repository';
-import { DexieHealthMetricRepository } from './infra/repositories/dexie-health-metric-repository';
 import {
   saveMilestoneTimestamp,
   getMilestoneTimestamp,
@@ -33,12 +26,10 @@ import { getOrCreateSubscriberId } from './infra/subscriber-id';
 
 // Repository singletons — stable across renders
 const fastingRepository = new DexieFastingRepository();
-const workoutRepository = new DexieWorkoutRepository();
-const healthMetricRepository = new DexieHealthMetricRepository();
 
 const DEFAULT_FASTING_HOURS = 16;
 
-type TabId = 'timer' | 'sos' | 'workout' | 'health';
+type TabId = 'timer' | 'sos';
 
 interface Tab {
   id: TabId;
@@ -49,8 +40,6 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'timer', label: 'タイマー', emoji: '⏱️' },
   { id: 'sos', label: 'SOS', emoji: '🆘' },
-  { id: 'workout', label: 'ワークアウト', emoji: '💪' },
-  { id: 'health', label: '健康', emoji: '📊' },
 ];
 
 function createNewSession(): FastingSession {
@@ -79,7 +68,6 @@ export function App() {
 
   const resetStore = useTimerStore((s) => s.reset);
 
-  const { workouts, currentStreak, longestStreak } = useWorkout(workoutRepository);
   const { sosEvents, recordSOSEvent, deleteSOSEvent } = useSOS(
     fastingRepository,
     activeSession?.id ?? null,
@@ -208,10 +196,6 @@ export function App() {
       }
     }
   }, [activeSession, recordSOSEvent]);
-
-  const handleWorkoutSaved = useCallback(() => {
-    // useWorkout auto-refreshes; no extra action needed
-  }, []);
 
   if (!sessionLoaded) {
     return (
@@ -462,104 +446,6 @@ export function App() {
           </div>
         </section>
 
-        {/* Workout tab */}
-        <section
-          id="tabpanel-workout"
-          role="tabpanel"
-          aria-label="ワークアウト"
-          hidden={activeTab !== 'workout'}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
-            }}
-          >
-            {/* Streak */}
-            <WorkoutStreak
-              currentStreak={currentStreak}
-              longestStreak={longestStreak}
-            />
-
-            {/* Logger */}
-            <div
-              style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '16px',
-                border: '1px solid #e5e7eb',
-                padding: '20px',
-              }}
-            >
-              <h2
-                style={{
-                  margin: '0 0 16px',
-                  fontSize: '1rem',
-                  fontWeight: 700,
-                  color: '#111827',
-                }}
-              >
-                ワークアウトを記録
-              </h2>
-              <WorkoutLogger
-                repository={workoutRepository}
-                sessionId={activeSession?.id ?? ''}
-                onWorkoutSaved={handleWorkoutSaved}
-              />
-            </div>
-
-            {/* History */}
-            <div
-              style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '16px',
-                border: '1px solid #e5e7eb',
-                padding: '20px',
-              }}
-            >
-              <h2
-                style={{
-                  margin: '0 0 16px',
-                  fontSize: '1rem',
-                  fontWeight: 700,
-                  color: '#111827',
-                }}
-              >
-                ワークアウト履歴
-              </h2>
-              <WorkoutHistory workouts={workouts} />
-            </div>
-          </div>
-        </section>
-
-        {/* Health tab */}
-        <section
-          id="tabpanel-health"
-          role="tabpanel"
-          aria-label="健康指標"
-          hidden={activeTab !== 'health'}
-        >
-          <div
-            style={{
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              border: '1px solid #e5e7eb',
-              padding: '20px',
-            }}
-          >
-            <h2
-              style={{
-                margin: '0 0 16px',
-                fontSize: '1rem',
-                fontWeight: 700,
-                color: '#111827',
-              }}
-            >
-              健康指標ダッシュボード
-            </h2>
-            <HealthMetricDashboard repository={healthMetricRepository} />
-          </div>
-        </section>
       </main>
 
       {/* Footer */}
